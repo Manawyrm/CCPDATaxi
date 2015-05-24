@@ -1,0 +1,108 @@
+os.loadAPI("txUI")
+os.loadAPI("glassDebug")
+os.loadAPI("config")
+
+glassDebug.open("back", "Fluttershy", 123, "Warehouse")
+rednet.open("back")
+
+local w, h = term.getSize()
+mainWindow = {}
+Waypoints = {}
+WaypointNameTextField = nil
+refreshWaypointList()
+
+function drawMainWindow()
+    window = txUI.Window:new({w = w; h = h;})
+    mainWindow = window
+    txUI.UIManager:addWindow(window)
+    txUI.UIManager:setVisibleWindow(window)
+    window:setTitleLabel(txUI.Label:new({text = "PDATaxi"; bgColor = window.tlColor; textColor = colors.white; w = window.w; x = window.x; textAlign = "right";}))
+    window:addComponent(txUI.Button:new({x = 2; y = 16; w = 7; h = 3; action = (function(self) portToSelectedWaypoint() end); text = "Los";}))
+    window:addComponent(txUI.Button:new({x = 10; y = 16; w = 7; h = 3; action = (function(self) createNewWaypoint() end); text = "Neu";}))
+
+    WaypointNameTextField = txUI.TextField:new(
+            {
+             x = 2;
+             y = 14;
+             w = 16;
+             placeholder = "Waypoint-Name";
+            }
+    )
+    mainWindow:addComponent(WaypointNameTextField)
+end
+
+drawMainWindow()
+
+waypointList = nil
+selectedWaypoint = nil
+function displayWaypointList()
+        while true do
+            os.pullEvent("drawWaypointList")
+
+            if (waypointList ~= nil) then
+                mainWindow:removeComponent(waypointList)
+            end
+
+            list = txUI.List:new({x = 2; y = 3; w = 24; h = 10})
+            waypointList = list
+            mainWindow:addComponent(list)
+            for k,v in pairs(Waypoints) do
+                list:addComponent(txUI.Button:new(
+                    {
+                        text = v.Name;
+                        action = (function(self) selectWaypoint(v) end);
+                    }))
+            end
+        end
+end
+
+function selectWaypoint(waypoint)
+    selectedWaypoint = waypoint
+end
+function portToSelectedWaypoint()
+    if (selectedWaypoint ~= nil) then
+        teleport(config.Username, selectedWaypoint.X, selectedWaypoint.Y, selectedWaypoint.Z)
+    end
+end
+
+function createNewWaypoint()
+    if (WaypointNameTextField.text == "") then
+        return
+    end
+    local x,y,z = gps.locate()
+    if (x == nil) then
+        return
+    end
+    newWaypoint = {}
+    newWaypoint.Name = WaypointNameTextField.text
+    newWaypoint.X    = x
+    newWaypoint.Y    = y
+    newWaypoint.Z    = z
+
+    rednet.send(config.TeleportBridge, newWaypoint, "teleportBridgeNewWaypoint")
+    senderId, message, protocol = rednet.receive("teleportBridgeNewWaypoint")
+    Waypoints = message
+
+    WaypointNameTextField.text = ""
+    os.queueEvent("drawWaypointList")
+end
+
+function teleport(user, x,y,z)
+    command = {}
+    command.User = user
+    command.X = x
+    command.Y = y
+    command.Z = z
+    rednet.send(config.TeleportBridge, command, "teleportBridge")
+end
+
+function refreshWaypointList()
+    rednet.send(config.TeleportBridge, "getWaypoints", "teleportBridgeWaypoints")
+    senderId, message, protocol = rednet.receive("teleportBridgeWaypoints")
+    Waypoints = message
+    os.queueEvent("drawWaypointList")
+end
+
+parallel.waitForAll(function() txUI.UIManager:startUpdateCycle()  end,
+                    displayWaypointList
+                    )

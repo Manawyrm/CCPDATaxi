@@ -1,0 +1,51 @@
+os.loadAPI("glassDebug")
+
+function writeAllText(filename, text)
+    local h = fs.open(filename, "w")
+    h.write(text)
+    h.flush()
+    h.close()
+    return
+end
+function readAllText(filename)
+    local h = fs.open(filename, "r")
+    local text = h.readAll()
+    h.close()
+    return text
+end
+
+glassDebug.open("top", "Fluttershy", 123, "Warehouse")
+
+rednet.open("top")
+
+ami = peripheral.wrap("right")
+world = ami.getOrLoadWorld(0)
+
+Waypoints = textutils.unserialize(readAllText("waypoints.lua"))
+--
+
+function receiveTeleportRequests()
+    while true do
+        senderId, message, protocol = rednet.receive("teleportBridge")
+        command = message
+        player = ami.getPlayerByName(command.User)
+        plentity = player.asEntity()
+        plentity.setPosition(command.X, command.Y, command.Z)
+    end
+end
+function receiveWaypointRequests()
+    while true do
+        senderId, message, protocol = rednet.receive("teleportBridgeWaypoints")
+        rednet.send(senderId, Waypoints, protocol)
+    end
+end
+function receiveNewWaypointRequests()
+    while true do
+        senderId, message, protocol = rednet.receive("teleportBridgeNewWaypoint")
+        table.insert(Waypoints, message)
+        writeAllText("waypoints.lua", textutils.serialize(Waypoints))
+        rednet.send(senderId, Waypoints, "teleportBridgeNewWaypoint")
+    end
+end
+
+parallel.waitForAll(receiveTeleportRequests, receiveWaypointRequests, receiveNewWaypointRequests)
